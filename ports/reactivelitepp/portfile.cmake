@@ -2,7 +2,7 @@ vcpkg_from_github(
     OUT_SOURCE_PATH SOURCE_PATH
     REPO herve-er/ReactiveLitepp
     REF "v${VERSION}"
-    SHA512 1dd55a159315e9f063254674ee3e3ebd862e8f130c0a3e835ca108494e8f4f44bd05cc9f2c4ee0bea8baf2aba3699caea5abb4bba29f4986b75fb19b3eadbbdb
+    SHA512 fe11f29300e0c5fc31bd445b4fa4f3666623e951d86132f2c2a3fb60562a0d7344a4c37244c10655bf36a629b4baf2ecbdb1abdbc5457137521b08b095bec7d5
     HEAD_REF main
 )
 
