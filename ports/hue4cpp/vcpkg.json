@@ -1,6 +1,7 @@
 {
   "name": "hue4cpp",
   "version": "1.0.0",
+  "port-version": 1,
   "description": "A modern C++ library for the Philips Hue V2 API",
   "homepage": "https://github.com/herve-er/hue4cpp",
   "license": "MIT",
