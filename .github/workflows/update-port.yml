@@ -8,6 +8,8 @@ on:
         required: true
         type: string
 
+# Requires repo setting: Settings > Actions > General > Workflow permissions
+#   -> "Allow GitHub Actions to create and approve pull requests" must be enabled
 permissions:
   contents: write
   pull-requests: write
@@ -23,7 +25,18 @@ jobs:
       - name: Validate port exists
         run: |
           if [ ! -d "ports/${{ inputs.port-name }}" ]; then
-            echo "::error::Port '${{ inputs.port-name }}' does not exist in the registry"
+            AVAILABLE=$(ls -1 ports/ | sed 's/^/- `/' | sed 's/$/`/')
+            {
+              echo "## :x: Port Not Found"
+              echo ""
+              echo "Port \`${{ inputs.port-name }}\` does not exist in the registry."
+              echo ""
+              echo "<details><summary>Available ports</summary>"
+              echo ""
+              echo "$AVAILABLE"
+              echo ""
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
@@ -49,12 +62,26 @@ jobs:
         id: check
         run: |
           if [ "${{ steps.current.outputs.version }}" = "${{ steps.latest.outputs.version }}" ]; then
-            echo "::notice::Port '${{ inputs.port-name }}' is already at the latest version (${{ steps.latest.outputs.version }})"
             echo "needed=false" >> "$GITHUB_OUTPUT"
           else
-            echo "Updating ${{ inputs.port-name }} from ${{ steps.current.outputs.version }} to ${{ steps.latest.outputs.version }}"
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Summary — already up to date
+        if: steps.check.outputs.needed == 'false'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## :white_check_mark: Port is already up to date
+
+          | | |
+          |---|---|
+          | **Port** | `${{ inputs.port-name }}` |
+          | **Current version** | `${{ steps.current.outputs.version }}` |
+          | **Latest release** | `${{ steps.latest.outputs.version }}` |
+          | **Repository** | [`${{ steps.current.outputs.repo }}`](https://github.com/${{ steps.current.outputs.repo }}) |
+
+          > No changes were made.
+          EOF
 
       - name: Download source and compute SHA512
         if: steps.check.outputs.needed == 'true'
@@ -96,10 +123,40 @@ jobs:
 
       - name: Create pull request
         if: steps.check.outputs.needed == 'true'
+        id: pr
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh pr create \
+          PR_URL=$(gh pr create \
             --title "Update ${{ inputs.port-name }} to ${{ steps.latest.outputs.version }}" \
             --body "Automated update of **${{ inputs.port-name }}** from \`${{ steps.current.outputs.version }}\` to \`${{ steps.latest.outputs.version }}\`.<br><br>Source: [Release ${{ steps.latest.outputs.tag }}](https://github.com/${{ steps.current.outputs.repo }}/releases/tag/${{ steps.latest.outputs.tag }})" \
-            --base main
+            --base main)
+          echo "url=$PR_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Summary — update complete
+        if: steps.check.outputs.needed == 'true'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## :package: Port Updated
+
+          | | |
+          |---|---|
+          | **Port** | `${{ inputs.port-name }}` |
+          | **Previous version** | `${{ steps.current.outputs.version }}` |
+          | **New version** | `${{ steps.latest.outputs.version }}` |
+          | **Repository** | [`${{ steps.current.outputs.repo }}`](https://github.com/${{ steps.current.outputs.repo }}) |
+          | **Release** | [`${{ steps.latest.outputs.tag }}`](https://github.com/${{ steps.current.outputs.repo }}/releases/tag/${{ steps.latest.outputs.tag }}) |
+
+          ### Changes
+
+          | File | Update |
+          |------|--------|
+          | `ports/${{ inputs.port-name }}/portfile.cmake` | SHA512 updated |
+          | `ports/${{ inputs.port-name }}/vcpkg.json` | Version :arrow_right: `${{ steps.latest.outputs.version }}` |
+          | `versions/baseline.json` | Baseline updated |
+          | `versions/*/${{ inputs.port-name }}.json` | New version entry added |
+
+          ### Pull Request
+
+          :link: ${{ steps.pr.outputs.url }}
+          EOF

@@ -44,13 +44,33 @@ jobs:
       - name: Validate release exists
         if: steps.repo.outputs.latest_tag == 'none'
         run: |
-          echo "::error::Repository '${{ steps.repo.outputs.full }}' has no releases. A release is required to create a port."
+          echo "::error::Repository '${{ steps.repo.outputs.full }}' has no releases."
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## :x: No Release Found
+
+          | | |
+          |---|---|
+          | **Repository** | [`${{ steps.repo.outputs.full }}`](${{ inputs.repo-url }}) |
+          | **Name** | `${{ steps.repo.outputs.name }}` |
+
+          > The repository has no published releases. A release with a tag (e.g. `v1.0.0`) is required to create a port.
+          EOF
           exit 1
 
       - name: Check port does not already exist
         run: |
           if [ -d "ports/${{ steps.repo.outputs.name }}" ]; then
-            echo "::error::Port '${{ steps.repo.outputs.name }}' already exists. Use the 'Update Port' workflow instead."
+            echo "::error::Port '${{ steps.repo.outputs.name }}' already exists."
+            cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## :warning: Port Already Exists
+
+          | | |
+          |---|---|
+          | **Port** | `${{ steps.repo.outputs.name }}` |
+          | **Repository** | [`${{ steps.repo.outputs.full }}`](${{ inputs.repo-url }}) |
+
+          > Use the **Update Port** workflow instead.
+          EOF
             exit 1
           fi
 
@@ -123,10 +143,47 @@ jobs:
           ISSUE_BODY_EOF
 
       - name: Create issue and assign to Copilot
+        id: issue
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue create \
+          ISSUE_URL=$(gh issue create \
             --title "Create port: ${{ steps.repo.outputs.name }}" \
             --body-file /tmp/issue-body.md \
-            --assignee "copilot"
+            --assignee "copilot")
+          echo "url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Summary — issue created
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+          ## :robot: Port Creation Assigned to Copilot
+
+          ### Repository
+
+          | | |
+          |---|---|
+          | **Repository** | [`${{ steps.repo.outputs.full }}`](${{ inputs.repo-url }}) |
+          | **Description** | ${{ steps.repo.outputs.description }} |
+          | **License** | `${{ steps.repo.outputs.license }}` |
+          | **Default branch** | `${{ steps.repo.outputs.default_branch }}` |
+          | **Latest release** | `${{ steps.repo.outputs.latest_tag }}` |
+          | **Version** | `${{ steps.repo.outputs.latest_version }}` |
+
+          ### Port
+
+          | | |
+          |---|---|
+          | **Port name** | `${{ steps.repo.outputs.name }}` |
+          | **SHA512** | `${{ steps.sha.outputs.sha512 }}` |
+
+          ### What happens next
+
+          1. :ticket: An issue has been created and assigned to **Copilot**
+          2. :mag: Copilot will analyse the repository and its build system
+          3. :memo: Copilot will create the port files and update the version database
+          4. :twisted_rightwards_arrows: A pull request will be opened automatically for review
+
+          ### Issue
+
+          :link: ${{ steps.issue.outputs.url }}
+          EOF
