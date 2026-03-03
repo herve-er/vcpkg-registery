@@ -33,7 +33,10 @@ jobs:
           echo "homepage=$(echo "$INFO" | jq -r '.html_url')" >> "$GITHUB_OUTPUT"
           echo "default_branch=$(echo "$INFO" | jq -r '.default_branch')" >> "$GITHUB_OUTPUT"
 
-          TAG=$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || echo "none")
+          TAG="none"
+          if gh api "repos/$REPO/releases/latest" > /tmp/release.json 2>/dev/null; then
+            TAG=$(jq -r '.tag_name' /tmp/release.json)
+          fi
           echo "latest_tag=$TAG" >> "$GITHUB_OUTPUT"
           if [ "$TAG" != "none" ]; then
             echo "latest_version=${TAG#v}" >> "$GITHUB_OUTPUT"
