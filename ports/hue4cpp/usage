@@ -1,0 +1,8 @@
+hue4cpp provides CMake targets:
+
+    find_package(hue4cpp CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE hue4cpp::hue4cpp)
+
+hue4cpp is a C++17 library for the Philips Hue V2 API.
+
+For examples, see: https://github.com/herve-er/hue4cpp

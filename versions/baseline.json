@@ -1,5 +1,9 @@
 {
   "default": {
+    "hue4cpp": {
+      "baseline": "1.0.0",
+      "port-version": 0
+    },
     "reactivelitepp": {
       "baseline": "1.1.3",
       "port-version": 0
