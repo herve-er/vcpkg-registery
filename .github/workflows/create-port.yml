@@ -1,0 +1,132 @@
+name: Create Port
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo-url:
+        description: "GitHub repository URL (e.g., https://github.com/owner/repo)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  create-port-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Gather repository information
+        id: repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO=$(echo "${{ inputs.repo-url }}" | sed 's|https://github.com/||' | sed 's|\.git$||' | sed 's|/$||')
+          echo "full=$REPO" >> "$GITHUB_OUTPUT"
+
+          INFO=$(gh api "repos/$REPO")
+          echo "name=$(echo "$INFO" | jq -r '.name' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+          echo "description=$(echo "$INFO" | jq -r '.description // "No description available"')" >> "$GITHUB_OUTPUT"
+          echo "license=$(echo "$INFO" | jq -r '.license.spdx_id // "UNKNOWN"')" >> "$GITHUB_OUTPUT"
+          echo "homepage=$(echo "$INFO" | jq -r '.html_url')" >> "$GITHUB_OUTPUT"
+          echo "default_branch=$(echo "$INFO" | jq -r '.default_branch')" >> "$GITHUB_OUTPUT"
+
+          TAG=$(gh api "repos/$REPO/releases/latest" --jq '.tag_name' 2>/dev/null || echo "none")
+          echo "latest_tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ "$TAG" != "none" ]; then
+            echo "latest_version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest_version=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate release exists
+        if: steps.repo.outputs.latest_tag == 'none'
+        run: |
+          echo "::error::Repository '${{ steps.repo.outputs.full }}' has no releases. A release is required to create a port."
+          exit 1
+
+      - name: Check port does not already exist
+        run: |
+          if [ -d "ports/${{ steps.repo.outputs.name }}" ]; then
+            echo "::error::Port '${{ steps.repo.outputs.name }}' already exists. Use the 'Update Port' workflow instead."
+            exit 1
+          fi
+
+      - name: Compute SHA512 of latest release
+        id: sha
+        run: |
+          curl -fsSL "https://github.com/${{ steps.repo.outputs.full }}/archive/refs/tags/${{ steps.repo.outputs.latest_tag }}.tar.gz" -o source.tar.gz
+          SHA512=$(sha512sum source.tar.gz | awk '{print $1}')
+          echo "sha512=$SHA512" >> "$GITHUB_OUTPUT"
+
+      - name: Build issue body
+        run: |
+          cat > /tmp/issue-body.md << 'ISSUE_BODY_EOF'
+          ## New Port Request
+
+          Create a new vcpkg port for the repository described below.
+
+          ### Repository Information
+
+          | Field | Value |
+          |-------|-------|
+          ISSUE_BODY_EOF
+
+          echo "| **Repository** | \`${{ steps.repo.outputs.full }}\` |" >> /tmp/issue-body.md
+          echo "| **Description** | $(echo '${{ steps.repo.outputs.description }}' | sed "s/|/\\\\|/g") |" >> /tmp/issue-body.md
+          echo "| **License** | \`${{ steps.repo.outputs.license }}\` |" >> /tmp/issue-body.md
+          echo "| **Default Branch** | \`${{ steps.repo.outputs.default_branch }}\` |" >> /tmp/issue-body.md
+          echo "| **Latest Release** | \`${{ steps.repo.outputs.latest_tag }}\` |" >> /tmp/issue-body.md
+          echo "| **Version** | \`${{ steps.repo.outputs.latest_version }}\` |" >> /tmp/issue-body.md
+          echo "| **SHA512** | \`${{ steps.sha.outputs.sha512 }}\` |" >> /tmp/issue-body.md
+
+          cat >> /tmp/issue-body.md << 'ISSUE_BODY_EOF'
+
+          ### Task
+
+          Analyse the repository and create a complete vcpkg port for it.
+
+          #### 1. Analyse the repository
+
+          - Browse the repository to understand the build system (CMake targets, install rules)
+          - Identify `find_package` names and `target_link_libraries` usage
+          - Determine if the library is header-only or requires compilation
+          - Identify any third-party dependencies
+
+          #### 2. Create port files
+
+          Use the existing port `reactivelitepp` in `ports/reactivelitepp/` as a reference for style and structure.
+
+          **`ports/<port-name>/portfile.cmake`** — Use `vcpkg_from_github` with the repo, tag, and SHA512 from the table above. Use the appropriate vcpkg build helpers (`vcpkg_cmake_configure`, `vcpkg_cmake_install`, `vcpkg_cmake_config_fixup`). Install the license with `vcpkg_install_copyright` and add a `usage` file.
+
+          **`ports/<port-name>/vcpkg.json`** — Port manifest with name, version, description, homepage, license, and dependencies (always include `vcpkg-cmake` and `vcpkg-cmake-config` as host dependencies, plus any library dependencies).
+
+          **`ports/<port-name>/usage`** — Usage instructions showing `find_package` and `target_link_libraries` commands.
+
+          #### 3. Update the version database
+
+          After creating the port files, run these commands to update the version database:
+
+          ```bash
+          git add ports/<port-name>
+          git commit -m "Add port <port-name> <version>"
+
+          git clone https://github.com/microsoft/vcpkg.git /tmp/vcpkg --depth 1
+          /tmp/vcpkg/bootstrap-vcpkg.sh -disableMetrics
+          /tmp/vcpkg/vcpkg --x-builtin-ports-root=./ports --x-builtin-registry-versions-dir=./versions x-add-version --all --verbose
+
+          git add versions/
+          git commit --amend -m "Add port <port-name> <version>"
+          ```
+          ISSUE_BODY_EOF
+
+      - name: Create issue and assign to Copilot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue create \
+            --title "Create port: ${{ steps.repo.outputs.name }}" \
+            --body-file /tmp/issue-body.md \
+            --assignee "copilot"
