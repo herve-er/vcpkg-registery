@@ -122,11 +122,11 @@ jobs:
 
           Use the existing port `reactivelitepp` in `ports/reactivelitepp/` as a reference for style and structure.
 
-          **`ports/<port-name>/portfile.cmake`** — Use `vcpkg_from_github` with the repo, tag, and SHA512 from the table above. Use the appropriate vcpkg build helpers (`vcpkg_cmake_configure`, `vcpkg_cmake_install`, `vcpkg_cmake_config_fixup`). Install the license with `vcpkg_install_copyright` and add a `usage` file.
+          **`ports/<port-name>/portfile.cmake`** -- Use `vcpkg_from_github` with the repo, tag, and SHA512 from the table above. Use the appropriate vcpkg build helpers (`vcpkg_cmake_configure`, `vcpkg_cmake_install`, `vcpkg_cmake_config_fixup`). Install the license with `vcpkg_install_copyright` and add a `usage` file.
 
-          **`ports/<port-name>/vcpkg.json`** — Port manifest with name, version, description, homepage, license, and dependencies (always include `vcpkg-cmake` and `vcpkg-cmake-config` as host dependencies, plus any library dependencies).
+          **`ports/<port-name>/vcpkg.json`** -- Port manifest with name, version, description, homepage, license, and dependencies (always include `vcpkg-cmake` and `vcpkg-cmake-config` as host dependencies, plus any library dependencies).
 
-          **`ports/<port-name>/usage`** — Usage instructions showing `find_package` and `target_link_libraries` commands.
+          **`ports/<port-name>/usage`** -- Usage instructions showing `find_package` and `target_link_libraries` commands.
 
           #### 3. Update the version database
 
@@ -152,14 +152,21 @@ jobs:
         run: |
           ISSUE_URL=$(gh issue create \
             --title "Create port: ${{ steps.repo.outputs.name }}" \
-            --body-file /tmp/issue-body.md \
-            --assignee "copilot")
+            --body-file /tmp/issue-body.md)
           echo "url=$ISSUE_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Summary — issue created
+          ISSUE_NUMBER=$(echo "$ISSUE_URL" | grep -oP '\d+$')
+          if gh issue edit "$ISSUE_NUMBER" --add-assignee "copilot" 2>/dev/null; then
+            echo "assigned=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Could not assign Copilot. Enable the coding agent in Settings > Copilot > Coding agent, then assign the issue manually."
+            echo "assigned=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summary -- issue created
         run: |
           cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
-          ## :robot: Port Creation Assigned to Copilot
+          ## :robot: Port Creation Issue Created
 
           ### Repository
 
@@ -181,7 +188,7 @@ jobs:
 
           ### What happens next
 
-          1. :ticket: An issue has been created and assigned to **Copilot**
+          1. :ticket: An issue has been created
           2. :mag: Copilot will analyse the repository and its build system
           3. :memo: Copilot will create the port files and update the version database
           4. :twisted_rightwards_arrows: A pull request will be opened automatically for review
@@ -189,4 +196,13 @@ jobs:
           ### Issue
 
           :link: ${{ steps.issue.outputs.url }}
+          EOF
+
+      - name: Summary -- Copilot not available
+        if: steps.issue.outputs.assigned == 'false'
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'EOF'
+
+          > :warning: **Copilot could not be assigned automatically.**
+          > Enable the coding agent in **Settings > Copilot > Coding agent**, then assign `copilot` to the issue manually.
           EOF
